@@ -81,6 +81,58 @@ class TestHueForgeFilamentDetection(unittest.TestCase):
         self.assertIsNone(result["used"])
 
 
+class TestSyntheticHueForgeConversion(unittest.TestCase):
+    """Run the real converter on a tiny generated five-color 3MF."""
+
+    def test_full_conversion_keeps_slots_swaps_and_slicing_settings(self):
+        template = Path(converter.find_default_template())
+        source_settings = json.loads(template.read_text(encoding="utf-8"))
+        source_settings.update({
+            "printer_model": "Bambu Lab X1 Carbon",
+            "filament_colour": COLORS,
+            "filament_type": ["PLA"] * 5,
+            "filament_settings_id": ["Generic PLA"] * 5,
+            "layer_height": "0.08",
+            "initial_layer_print_height": "0.16",
+            "sparse_infill_density": "100%",
+            "print_settings_id": "0.08mm High Quality @BBL X1C",
+        })
+        # A tiny valid triangle model, with no face painting: switching
+        # colors by layer is the only reason to keep slots 2..5.
+        model = b'''<?xml version="1.0"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <resources><object id="1" type="model">
+    <mesh>
+      <vertices>
+        <vertex x="0" y="0" z="0"/>
+        <vertex x="10" y="0" z="0"/>
+        <vertex x="0" y="10" z="0"/>
+      </vertices>
+      <triangles><triangle v1="0" v2="1" v3="2"/></triangles>
+    </mesh>
+  </object></resources>
+  <build><item objectid="1"/></build>
+</model>'''
+        with tempfile.TemporaryDirectory() as tmp:
+            original = Path(tmp) / "hueforge.3mf"
+            converted = Path(tmp) / "hueforge_AD5X.3mf"
+            with zipfile.ZipFile(original, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("Metadata/project_settings.config", json.dumps(source_settings))
+                archive.writestr("Metadata/model_settings.config", OBJECT_CONFIG)
+                archive.writestr("Metadata/custom_gcode_per_layer.xml", LAYER_CHANGES)
+                archive.writestr("3D/3dmodel.model", model)
+
+            converter.convert(str(original), str(converted), str(template))
+            with zipfile.ZipFile(converted) as archive:
+                settings = json.loads(archive.read("Metadata/project_settings.config"))
+                self.assertEqual(settings["filament_colour"], COLORS)
+                self.assertEqual(len(settings["filament_settings_id"]), len(COLORS))
+                self.assertEqual(settings["layer_height"], "0.08")
+                self.assertEqual(settings["initial_layer_print_height"], "0.16")
+                self.assertEqual(settings["sparse_infill_density"], "100%")
+                self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
+
+
 class TestActualHueForgeProject(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("HUEFORGE_SAMPLE"), "Set HUEFORGE_SAMPLE for real-file test")
     def test_full_conversion_preserves_colors_layer_changes_and_process(self):
