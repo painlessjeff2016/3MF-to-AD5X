@@ -55,6 +55,36 @@ and print-process settings, and inspect the sliced layer preview before
 printing. A successful test doesn't guarantee OrcaSlicer will honor
 a layer-change instruction for every source project.
 
+## Bundled ZMOD AD5X printer profile
+
+The converter's complete `ad5x_template.json` is the project-level baseline.
+The matching OrcaSlicer printer preset is preserved in
+`profiles/Flashforge AD5X.json`, supplied by the printer owner. It includes:
+
+- `LED_ON` followed by `START_PRINT ...` at print start
+- `END_PRINT` followed by `LED_OFF` at print end
+- `SET_PRINT_STATS_INFO CURRENT_LAYER=...` before each layer
+- 220 x 220 mm printable area, Klipper flavor, 0.4 mm nozzle and
+  `printer_settings_id = Flashforge AD5X`
+
+A printer preset alone is **not** a full 3MF project template: it lacks
+process settings, author filament settings, and other metadata that the
+converter needs. Its machine settings were therefore merged into the
+complete default project template. The original preset is kept as a separate
+file for auditing and future profile updates.
+
+The preset's `name`, `from` and `inherits` fields are not copied into
+project-level metadata. Its `default_print_profile` points to an
+**AD5M Pro** process preset; the generated project's default remains
+`0.20mm Standard @FF AD5X` instead. The project-specific layer height,
+first-layer height, infill, colors and color switches still come from
+the author 3MF, not from printer defaults.
+
+This template assumes your ZMOD/Klipper firmware provides `LED_ON`,
+`LED_OFF`, `START_PRINT`, `END_PRINT`, and `SET_PRINT_STATS_INFO`.
+To use other firmware or another printer, provide your own complete
+project template via `--template` rather than reusing these macros.
+
 ## AD5X hardware limits
 
 The AD5X IFS holds four active spools. **Preserving five or more filament
