@@ -1719,7 +1719,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                     elif n == "3D/3dmodel.model":
                         txt = data.decode("utf-8")
                         txt = re.sub(r'(<metadata name="Application">)[^<]*',
-                                     r"\g<1>BambuStudio-" + str(T.get("version", "2.3.2")), txt, 1)
+                                     r"\g<1>BambuStudio-" + str(T.get("version", "2.3.2")), txt, count=1)
                         if ow:
                             def move(m):
                                 tag = m.group(0)
