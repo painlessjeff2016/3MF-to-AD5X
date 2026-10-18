@@ -91,20 +91,22 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
 
         # The source is an Orca printer PRESET, not a whole .3mf project.
         # Preserve the project envelope and the AD5X process selection.
-        excluded = {"name", "from", "inherits", "default_print_profile"}
+        excluded = {"name", "from", "inherits"}
         for key, value in profile.items():
             if key not in excluded:
                 self.assertEqual(template[key], value, key)
 
         self.assertEqual(template["printer_settings_id"], "Flashforge AD5X")
         self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X")
+        self.assertNotIn("AD5M", json.dumps(profile))
+        self.assertNotIn("AD5M", json.dumps(template))
         self.assertEqual(template["name"], "project_settings")
         self.assertEqual(template["from"], "project")
         self.assertNotIn("inherits", template)
         self.assertGreater(len(template), len(profile))
 
-        self.assertTrue(template["machine_start_gcode"].startswith("LED_ON\\nSTART_PRINT"))
-        self.assertEqual(template["machine_end_gcode"], "END_PRINT\\nLED_OFF")
+        self.assertTrue(template["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
+        self.assertEqual(template["machine_end_gcode"], "END_PRINT\nLED_OFF")
         self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["before_layer_change_gcode"])
 
 class TestSyntheticHueForgeConversion(unittest.TestCase):
@@ -158,8 +160,8 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["sparse_infill_density"], "100%")
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
                 self.assertEqual(settings["printer_settings_id"], "Flashforge AD5X")
-                self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\\nSTART_PRINT"))
-                self.assertEqual(settings["machine_end_gcode"], "END_PRINT\\nLED_OFF")
+                self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
+                self.assertEqual(settings["machine_end_gcode"], "END_PRINT\nLED_OFF")
                 self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X")
 
 
