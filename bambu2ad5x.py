@@ -1131,6 +1131,32 @@ def _pos_int(v):
     return int(v) if v and str(v).isdigit() and int(v) > 0 else None
 
 
+def has_layer_filament_changes(zin, name):
+    """True if per-layer custom G-code may depend on the source filament slots.
+
+    HueForge / OrcaSlicer use <layer gcode="tool_change" extruder="N" /> rather
+    than the older <code> nodes. The model itself may reference only extruder
+    1, but subsequent layers use extruders 2..N. Pruning or renumbering these
+    slots would break the print while leaving the layer-change XML untouched.
+
+    Keep all slots if the XML cannot be parsed: losing a few pruning
+    optimisations is better than silently changing filament assignments.
+    """
+    try:
+        root = ET.fromstring(zin.read(name))
+    except (ET.ParseError, UnicodeError):
+        return True
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1].lower() if isinstance(element.tag, str) else ""
+        if tag == "code":
+            return True  # Keep the pre-existing conservative legacy behavior.
+        if tag == "layer":
+            command = (element.get("gcode") or "").strip().lower()
+            if command in ("tool_change", "color_change", "colour_change") or element.get("type") == "2":
+                return True
+    return False
+
+
 def analyze_filaments(zin, S, nfil):
     """Which filaments does the project really print with?  Understands painted colours.
     -> {"used": set of 1-based filaments or None (cannot tell -> remove nothing), "why": reason when None,
@@ -1142,7 +1168,8 @@ def analyze_filaments(zin, S, nfil):
     if MS not in names:
         res["why"] = "missing object data"
         return res
-    if "Metadata/custom_gcode_per_layer.xml" in names and b"<code" in zin.read("Metadata/custom_gcode_per_layer.xml"):
+    if ("Metadata/custom_gcode_per_layer.xml" in names and
+            has_layer_filament_changes(zin, "Metadata/custom_gcode_per_layer.xml")):
         res["why"] = "colour-change layers"
         return res
     raw = zin.read(MS).decode("utf-8", "replace")
