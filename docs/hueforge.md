@@ -70,15 +70,15 @@ The matching OrcaSlicer printer preset is preserved in
 A printer preset alone is **not** a full 3MF project template: it lacks
 process settings, author filament settings, and other metadata that the
 converter needs. Its machine settings were therefore merged into the
-complete default project template. The original preset is kept as a separate
-file for auditing and future profile updates.
+complete default project template. The supplied V2 preset is kept as a separate
+file for auditing and future profile updates, with one correction:
+its lingering `default_print_profile` reference to AD5M Pro was changed
+to the AD5X template's `0.20mm Standard @FF AD5X`.
 
 The preset's `name`, `from` and `inherits` fields are not copied into
-project-level metadata. Its `default_print_profile` points to an
-**AD5M Pro** process preset; the generated project's default remains
-`0.20mm Standard @FF AD5X` instead. The project-specific layer height,
-first-layer height, infill, colors and color switches still come from
-the author 3MF, not from printer defaults.
+project-level metadata. The project-specific layer height, first-layer
+height, infill, colors and color switches still come from the author
+3MF, not from printer defaults.
 
 This template assumes your ZMOD/Klipper firmware provides `LED_ON`,
 `LED_OFF`, `START_PRINT`, `END_PRINT`, and `SET_PRINT_STATS_INFO`.
