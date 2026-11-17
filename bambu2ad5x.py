@@ -32,11 +32,25 @@ DEFAULT_TEMPLATE = os.path.join(HERE, "ad5x_template.json")
 SETTINGS = "Metadata/project_settings.config"
 
 
+def default_template_paths():
+    """Candidate locations for the complete AD5X project template."""
+    dirs = (HERE, getattr(sys, "_MEIPASS", None), os.path.dirname(os.path.abspath(sys.executable)), os.getcwd())
+    return dict.fromkeys(os.path.join(d, "ad5x_template.json") for d in dirs if d)
+
+
+def is_project_template(settings):
+    required = ("layer_height", "initial_layer_print_height", "sparse_infill_density",
+                "wall_loops", "filament_type", "printable_area")
+    return isinstance(settings, dict) and all(settings.get(key) not in (None, "", []) for key in required)
+
+
 def find_default_template():
-    """Bundled template: next to the script, inside the PyInstaller bundle, next to the .exe, or the cwd."""
-    for d in (HERE, getattr(sys, "_MEIPASS", None), os.path.dirname(os.path.abspath(sys.executable)), os.getcwd()):
-        if d and os.path.isfile(os.path.join(d, "ad5x_template.json")):
-            return os.path.join(d, "ad5x_template.json")
+    for path in default_template_paths():
+        try:
+            if is_project_template(load_settings(path)):
+                return path
+        except (OSError, ValueError):
+            continue
     return DEFAULT_TEMPLATE
 
 
@@ -509,13 +523,19 @@ def load_settings(path):
 def load_template(path):
     """Use the bundled project settings beneath a standalone printer preset."""
     selected = load_settings(path)
-    if "layer_height" in selected and "initial_layer_print_height" in selected:
+    if is_project_template(selected):
         return selected, False
 
     baseline_path = find_default_template()
-    if not baseline_path:
-        raise ValueError("A printer-only preset requires the bundled ad5x_template.json.")
-    baseline = load_settings(baseline_path)
+    try:
+        baseline = load_settings(baseline_path)
+    except (OSError, ValueError):
+        baseline = None
+    if not is_project_template(baseline):
+        raise ValueError(
+            f"No complete AD5X project template found. Restore the repository's ad5x_template.json "
+            f"at {baseline_path}. Select your printer preset separately under Advanced."
+        )
     machine_keys = PRINTER_OPTS - {"inherits", "default_print_profile"}
     baseline.update({key: value for key, value in selected.items() if key in machine_keys})
     printer_id = selected.get("printer_settings_id") or selected.get("name")

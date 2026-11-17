@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -133,6 +134,21 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
         self.assertNotIn("inherits", settings)
         for key in ("layer_height", "initial_layer_print_height", "sparse_infill_density", "filament_type"):
             self.assertIn(key, settings)
+
+
+    def test_invalid_default_template_is_skipped_or_rejected(self):
+        bundled = Path(converter.find_default_template())
+        with tempfile.TemporaryDirectory() as temp:
+            invalid = Path(temp) / "ad5x_template.json"
+            invalid.write_text('{"name": "AD5X Nopoop .4"}', encoding="utf-8")
+            with patch.object(converter, "default_template_paths", return_value=[str(invalid), str(bundled)]):
+                self.assertEqual(converter.find_default_template(), str(bundled))
+                settings, _ = converter.load_template(str(invalid))
+                self.assertIn("sparse_infill_density", settings)
+            with patch.object(converter, "default_template_paths", return_value=[str(invalid)]), \
+                    patch.object(converter, "DEFAULT_TEMPLATE", str(invalid)):
+                with self.assertRaisesRegex(ValueError, "No complete AD5X project template"):
+                    converter.load_template(str(invalid))
 
 
 class TestSyntheticHueForgeConversion(unittest.TestCase):
