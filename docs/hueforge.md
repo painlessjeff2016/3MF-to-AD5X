@@ -15,13 +15,10 @@ converter only looked for `<code>` entries there. They therefore concluded
 the other slots were unused, pruned their colors and filament presets, and
 left the `tool_change` instructions pointing at missing slots.
 
-The fix recognizes these per-layer color changes and **disables unused-slot
-pruning for the entire source project**. It preserves the source order and
-filament count, rather than trying to guess which slots are safe to remove.
-
-Other projects that don't use layer color changes keep the existing pruning
-behavior. Malformed custom G-code XML is treated conservatively: retain all
-filament slots rather than silently lose a needed color.
+The converter includes explicit layer-change references when determining
+which slots are used. It removes unused slots by default, keeps the
+remaining slots in source order, and updates the layer-change indices.
+Malformed or ambiguous layer G-code retains the original slots.
 
 ## Tests
 
@@ -39,8 +36,8 @@ HUEFORGE_SAMPLE="/path/to/original-hueforge.3mf" \
 ```
 
 The real-file test writes to a temporary destination, never modifies the
-original, and asserts exact filament colors, retained layer change XML,
-layer height, initial layer height and infill density. It is skipped in CI
+original, and checks that each layer change still targets the same color and that the
+layer height, initial layer height, and infill density survive. It is skipped in CI
 unless a sample is supplied.
 
 For an additional manual check, produce a separate converted project:
@@ -67,13 +64,11 @@ The matching OrcaSlicer printer preset is preserved in
 - 220 x 220 mm printable area, Klipper flavor, 0.4 mm nozzle and
   `printer_settings_id = Flashforge AD5X`
 
-A printer preset alone is **not** a full 3MF project template: it lacks
-process settings, author filament settings, and other metadata that the
-converter needs. Its machine settings were therefore merged into the
-complete default project template. The supplied V2 preset is kept as a separate
-file for auditing and future profile updates, with one correction:
-its lingering `default_print_profile` reference to AD5M Pro was changed
-to the AD5X template's `0.20mm Standard @FF AD5X`.
+The converter can use a standalone Orca printer preset supplied via
+`--template`. It overlays the preset's machine settings on the bundled
+project baseline, which supplies the AD5X process and filament defaults.
+The preset's printer ID (or its name if no ID is present) identifies the
+machine in OrcaSlicer.
 
 The preset's `name`, `from` and `inherits` fields are not copied into
 project-level metadata. The project-specific layer height, first-layer

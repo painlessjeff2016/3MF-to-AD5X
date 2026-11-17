@@ -45,8 +45,7 @@ class TestHueForgeFilamentDetection(unittest.TestCase):
 
     def test_hueforge_tool_changes_protect_all_slots(self):
         result = self.analyse(LAYER_CHANGES)
-        self.assertIsNone(result["used"])
-        self.assertEqual(result["why"], "colour-change layers")
+        self.assertEqual(result["used"], {1, 2, 3, 4, 5})
 
     def test_unused_slots_still_pruned_on_regular_single_colour(self):
         result = self.analyse()
@@ -62,19 +61,23 @@ class TestHueForgeFilamentDetection(unittest.TestCase):
         result = self.analyse(
             b'<custom_gcodes_per_layer><layer gcode="color_change" extruder="3" /></custom_gcodes_per_layer>'
         )
-        self.assertIsNone(result["used"])
+        self.assertEqual(result["used"], {1, 3})
 
     def test_namespaced_layer_protects_slots(self):
         result = self.analyse(
             b'<r xmlns="urn:orca"><layer gcode="tool_change" extruder="4" /></r>'
         )
-        self.assertIsNone(result["used"])
+        self.assertEqual(result["used"], {1, 4})
 
     def test_benign_layer_does_not_disable_pruning(self):
         result = self.analyse(
             b'<custom_gcodes_per_layer><layer gcode="pause" type="0" /></custom_gcodes_per_layer>'
         )
         self.assertEqual(result["used"], {1})
+
+    def test_out_of_range_layer_reference_preserves_slots(self):
+        result = self.analyse(b'<root><layer gcode="tool_change" extruder="6"/></root>')
+        self.assertIsNone(result["used"])
 
     def test_malformed_custom_change_xml_preserves_slots(self):
         result = self.analyse(b'<custom_gcodes_per_layer><layer gcode="tool_change"')
@@ -109,20 +112,53 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
         self.assertEqual(template["machine_end_gcode"], "END_PRINT\nLED_OFF")
         self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["before_layer_change_gcode"])
 
+    def test_printer_only_template_uses_complete_ad5x_baseline(self):
+        preset = {
+            "name": "AD5X Nopoop .4",
+            "from": "User",
+            "inherits": "Flashforge AD5X 0.4 nozzle",
+            "default_print_profile": "0.20mm Standard @Flashforge AD5M Pro 0.4 Nozzle",
+            "machine_start_gcode": "LED_ON",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "printer.json"
+            path.write_text(json.dumps(preset), encoding="utf-8")
+            settings, printer_only = converter.load_template(str(path))
+
+        self.assertTrue(printer_only)
+        self.assertEqual(settings["machine_start_gcode"], "LED_ON")
+        self.assertEqual(settings["printer_settings_id"], "AD5X Nopoop .4")
+        self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X")
+        self.assertEqual(settings["name"], "project_settings")
+        self.assertNotIn("inherits", settings)
+        for key in ("layer_height", "initial_layer_print_height", "sparse_infill_density", "filament_type"):
+            self.assertIn(key, settings)
+
+
 class TestSyntheticHueForgeConversion(unittest.TestCase):
     """Run the real converter on a tiny generated five-color 3MF."""
 
     def test_full_conversion_keeps_slots_swaps_and_slicing_settings(self):
         template = Path(converter.find_default_template())
         source_settings = json.loads(template.read_text(encoding="utf-8"))
+        source_colors = COLORS[:1] + ["#123456"] + COLORS[1:]
+        source_layer_changes = LAYER_CHANGES
+        for slot in range(5, 1, -1):
+            source_layer_changes = source_layer_changes.replace(
+                f'extruder="{slot}"'.encode(), f'extruder="{slot + 1}"'.encode()
+            )
         source_settings.update({
             "printer_model": "Bambu Lab X1 Carbon",
-            "filament_colour": COLORS,
-            "filament_type": ["PLA"] * 5,
-            "filament_settings_id": ["Generic PLA"] * 5,
+            "filament_colour": source_colors,
+            "filament_type": ["PLA"] * len(source_colors),
+            "filament_settings_id": ["Generic PLA"] * len(source_colors),
             "layer_height": "0.08",
             "initial_layer_print_height": "0.16",
             "sparse_infill_density": "100%",
+            "bridge_line_width": "0.45",
+            "wall_loops": "4",
+            "enable_support": "1",
+            "machine_start_gcode": "SOURCE_MACHINE_START",
             "print_settings_id": "0.08mm High Quality @BBL X1C",
         })
         # A tiny valid triangle model, with no face painting: switching
@@ -144,13 +180,19 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             original = Path(tmp) / "hueforge.3mf"
             converted = Path(tmp) / "hueforge_AD5X.3mf"
+            custom_template = Path(tmp) / "ad5x.json"
+            template_settings = json.loads(template.read_text(encoding="utf-8"))
+            template_settings.pop("bridge_line_width", None)
+            template_settings["different_settings_to_system"][0] += ";brim_width"
+            source_settings.pop("brim_width", None)
             with zipfile.ZipFile(original, "w", zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr("Metadata/project_settings.config", json.dumps(source_settings))
+                archive.writestr(converter.SETTINGS, json.dumps(source_settings))
                 archive.writestr("Metadata/model_settings.config", OBJECT_CONFIG)
-                archive.writestr("Metadata/custom_gcode_per_layer.xml", LAYER_CHANGES)
+                archive.writestr(converter.LAYER_GCODE, source_layer_changes)
                 archive.writestr("3D/3dmodel.model", model)
+            custom_template.write_text(json.dumps(template_settings), encoding="utf-8")
 
-            converter.convert(str(original), str(converted), str(template))
+            converter.convert(str(original), str(converted), str(custom_template))
             with zipfile.ZipFile(converted) as archive:
                 settings = json.loads(archive.read("Metadata/project_settings.config"))
                 self.assertEqual(settings["filament_colour"], COLORS)
@@ -158,7 +200,20 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["layer_height"], "0.08")
                 self.assertEqual(settings["initial_layer_print_height"], "0.16")
                 self.assertEqual(settings["sparse_infill_density"], "100%")
-                self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
+                self.assertEqual(settings["bridge_line_width"], "0.45")
+                self.assertEqual(settings["wall_loops"], "4")
+                self.assertEqual(settings["enable_support"], "1")
+                diff = settings["different_settings_to_system"]
+                self.assertEqual(len(diff), len(COLORS) + 2)
+                self.assertEqual(diff[-1], "")
+                self.assertLessEqual(
+                    {"layer_height", "initial_layer_print_height", "sparse_infill_density",
+                     "bridge_line_width", "wall_loops", "enable_support", "brim_width"},
+                    set(diff[0].split(";")),
+                )
+                _, actual = converter.parse_layer_filaments(archive.read(converter.LAYER_GCODE), len(COLORS))
+                _, expected = converter.parse_layer_filaments(LAYER_CHANGES, len(COLORS))
+                self.assertEqual([node.attrib for node in actual], [node.attrib for node in expected])
                 self.assertEqual(settings["printer_settings_id"], "Flashforge AD5X")
                 self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
                 self.assertEqual(settings["machine_end_gcode"], "END_PRINT\nLED_OFF")
@@ -179,9 +234,16 @@ class TestActualHueForgeProject(unittest.TestCase):
             with zipfile.ZipFile(original) as before_zip, zipfile.ZipFile(output) as after_zip:
                 before = json.loads(before_zip.read(settings_name))
                 after = json.loads(after_zip.read(settings_name))
-                self.assertEqual(before["filament_colour"], after["filament_colour"])
-                self.assertEqual(len(before["filament_colour"]), len(after["filament_settings_id"]))
-                self.assertEqual(before_zip.read(layer_name), after_zip.read(layer_name))
+                self.assertEqual(len(after["filament_colour"]), len(after["filament_settings_id"]))
+                _, old_layers = converter.parse_layer_filaments(before_zip.read(layer_name), len(before["filament_colour"]))
+                _, new_layers = converter.parse_layer_filaments(after_zip.read(layer_name), len(after["filament_colour"]))
+                self.assertEqual(len(old_layers), len(new_layers))
+                for old, new in zip(old_layers, new_layers):
+                    self.assertEqual(old.get("top_z"), new.get("top_z"))
+                    self.assertEqual(
+                        before["filament_colour"][int(old.get("extruder")) - 1],
+                        after["filament_colour"][int(new.get("extruder")) - 1],
+                    )
                 for setting in ("layer_height", "initial_layer_print_height", "sparse_infill_density"):
                     self.assertEqual(before[setting], after.get(setting), setting)
 

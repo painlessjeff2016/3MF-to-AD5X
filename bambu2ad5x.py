@@ -332,6 +332,14 @@ RENAMES = {"initial_layer_flow_ratio": "first_layer_flow_ratio",
 CARRY_ANYWAY = {"best_object_pos", "silent_mode", "support_object_skip_flush", "wrapping_detection_layers"}
 # added: copied keys that are in no Orca option list, so they must be registered by hand
 EXTRA_PROCESS = {"has_scarf_joint_seam", "other_layers_print_sequence_nums", "support_object_skip_flush"}
+# Portable process options supported by Orca even when an older AD5X template
+# omits their defaults. Keep machine, tool, and executable settings template-bound.
+PROCESS_WITHOUT_TEMPLATE = set("""bottom_layer_direction bridge_line_width brim_ears_outer_only
+    brim_flow_ratio combine_brims hole_to_polyhole_max_edges ironing_expansion relative_bridge_angle
+    small_support_perimeter_threshold sparse_infill_smooth_factor top_layer_direction
+    top_surface_expansion top_surface_expansion_direction top_surface_expansion_margin
+    unsupported_wall_last wall_maximum_deviation wall_maximum_resolution""".split())
+
 # speeds/accels are only carried with --keep-speeds
 MOTION_RE = re.compile(r"(_speed|_acceleration|_jerk)$")
 MOTION_KEYS = {"default_acceleration", "default_jerk", "travel_speed", "bridge_speed",
@@ -498,6 +506,24 @@ def load_settings(path):
                          "(On MakerWorld download the *print profile*, not the model file.)")
 
 
+def load_template(path):
+    """Use the bundled project settings beneath a standalone printer preset."""
+    selected = load_settings(path)
+    if "layer_height" in selected and "initial_layer_print_height" in selected:
+        return selected, False
+
+    baseline_path = find_default_template()
+    if not baseline_path:
+        raise ValueError("A printer-only preset requires the bundled ad5x_template.json.")
+    baseline = load_settings(baseline_path)
+    machine_keys = PRINTER_OPTS - {"inherits", "default_print_profile"}
+    baseline.update({key: value for key, value in selected.items() if key in machine_keys})
+    printer_id = selected.get("printer_settings_id") or selected.get("name")
+    if printer_id:
+        baseline["printer_settings_id"] = printer_id
+    return baseline, True
+
+
 def first(v):
     return v[0] if isinstance(v, list) and v else v
 
@@ -561,6 +587,7 @@ def build_diff_lists(copied, nfil, flag_skip_flush=False):
     """[process, filament 1..N, printer].  Orca takes every key that is NOT listed from the installed AD5X system
     preset, so we list EVERY key we copied from the author: no value can ever be lost, whatever Orca version is
     installed.  (Extra keys that happen to equal the preset are harmless.)
+    The input keys also include process overrides from the template and conversion adjustments.
     The printer slot stays empty, like the web converter: listing anything there (best_object_pos!) makes Orca flag
     the printer preset as modified and pop up 'Transfer or discard changes'.  best_object_pos goes into the process
     slot, exactly where the web converter puts it."""
@@ -1131,30 +1158,35 @@ def _pos_int(v):
     return int(v) if v and str(v).isdigit() and int(v) > 0 else None
 
 
-def has_layer_filament_changes(zin, name):
-    """True if per-layer custom G-code may depend on the source filament slots.
+LAYER_GCODE = "Metadata/custom_gcode_per_layer.xml"
 
-    HueForge / OrcaSlicer use <layer gcode="tool_change" extruder="N" /> rather
-    than the older <code> nodes. The model itself may reference only extruder
-    1, but subsequent layers use extruders 2..N. Pruning or renumbering these
-    slots would break the print while leaving the layer-change XML untouched.
 
-    Keep all slots if the XML cannot be parsed: losing a few pruning
-    optimisations is better than silently changing filament assignments.
-    """
+def parse_layer_filaments(data, nfil):
+    """Return the layer XML and its explicit filament references, or None if ambiguous."""
     try:
-        root = ET.fromstring(zin.read(name))
-    except (ET.ParseError, UnicodeError):
-        return True
+        root = ET.fromstring(data)
+    except (ET.ParseError, UnicodeError, LookupError):
+        return None
+    changes = []
     for element in root.iter():
-        tag = element.tag.rsplit("}", 1)[-1].lower() if isinstance(element.tag, str) else ""
+        tag = element.tag.rsplit("}", 1)[-1].lower()
         if tag == "code":
-            return True  # Keep the pre-existing conservative legacy behavior.
-        if tag == "layer":
-            command = (element.get("gcode") or "").strip().lower()
-            if command in ("tool_change", "color_change", "colour_change") or element.get("type") == "2":
-                return True
-    return False
+            return None
+        if tag != "layer":
+            continue
+        command = (element.get("gcode") or "").strip().lower()
+        if command in ("tool_change", "color_change", "colour_change") or (
+                element.get("type") == "2" and not command):
+            slot = _pos_int(element.get("extruder"))
+            if slot is None or slot > nfil:
+                return None
+            changes.append(element)
+        elif command not in ("", "pause"):
+            return None
+        elif element.get("type") not in (None, "0") or (
+                element.get("extruder") not in (None, "", "0")):
+            return None
+    return root, changes
 
 
 def analyze_filaments(zin, S, nfil):
@@ -1168,10 +1200,14 @@ def analyze_filaments(zin, S, nfil):
     if MS not in names:
         res["why"] = "missing object data"
         return res
-    if ("Metadata/custom_gcode_per_layer.xml" in names and
-            has_layer_filament_changes(zin, "Metadata/custom_gcode_per_layer.xml")):
-        res["why"] = "colour-change layers"
-        return res
+    layer_slots = set()
+    if LAYER_GCODE in names:
+        parsed = parse_layer_filaments(zin.read(LAYER_GCODE), nfil)
+        if parsed is None:
+            res["why"] = "ambiguous per-layer G-code"
+            return res
+        layer_slots = {int(element.get("extruder")) for element in parsed[1]}
+    res["layer_slots"] = layer_slots
     raw = zin.read(MS).decode("utf-8", "replace")
     try:
         tree = ET.fromstring(raw.encode("utf-8"))
@@ -1233,7 +1269,7 @@ def analyze_filaments(zin, S, nfil):
             raise Unresolved
         raise Unresolved
 
-    used, mapped_states = set(), set()
+    used, mapped_states = set(layer_slots), set()
     try:
         for o in objects:
             parts = o["parts"] or [{"id": None, "sub": "normal_part", "ext": None, "name": o["name"]}]
@@ -1291,6 +1327,10 @@ def analyze_filaments(zin, S, nfil):
         res["why"] = "filament numbers outside the project's filament list"
         res["fixes"], res["rebase"], res["notes"] = {}, {}, []
         return res
+    if any(slot in mapped_states and slot != index for index, slot in enumerate(sorted(used), 1)):
+        res["why"] = "pruning would renumber painted colours"
+        res["fixes"], res["rebase"], res["notes"] = {}, {}, []
+        return res
     res["used"] = used
     if len(res["notes"]) > 3:
         res["notes"] = [f"{len(res['notes'])} objects are painted entirely with another filament than their base one; "
@@ -1317,9 +1357,11 @@ def prune_filaments(R, nfil, keep):
         R["flush_volumes_matrix"] = [m[(a - 1) * nfil + (b - 1)] for a in keep for b in keep]
     if isinstance(vec, list) and len(vec) == 2 * nfil:
         R["flush_volumes_vector"] = [vec[2 * (i - 1) + j] for i in keep for j in (0, 1)]
-    d = R.get("different_settings_to_system")
-    if isinstance(d, list) and len(d) >= 3:
-        R["different_settings_to_system"] = [d[0]] + [d[1]] * n + [d[-1]]
+    slot_map = {old: new for new, old in enumerate(keep, 1)}
+    for key in FIL_OVERRIDES:
+        slot = _pos_int(first(R.get(key)))
+        if slot in slot_map and slot != slot_map[slot]:
+            R[key] = str(slot_map[slot])
     if n == 1:
         R["enable_prime_tower"] = "0"        # nothing to purge with a single filament
 
@@ -1416,12 +1458,14 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         S, prusa = prusa_to_orca(src)
     else:
         S = load_settings(src)
-    T = load_settings(template)
+    T, printer_only = load_template(template)
     if kind == "ad5x":
         raise SystemExit(f"{src}: already an AD5X project - nothing to do.")
     R = copy.deepcopy(T)
     rep = {"kept": [], "renamed": [], "replaced": [], "discarded": [], "no_equivalent": [], "warn": [],
            "notes": [], "author": [], "speeds": [], "source": kind}
+    if printer_only:
+        rep["notes"].append("Used the selected printer preset with the bundled AD5X process and filament defaults.")
     if prusa:
         rep["notes"] += prusa["notes"]
         rep["notes"].append("PrusaSlicer project: geometry, per-object extruders and painted colour/support/seam data were "
@@ -1496,7 +1540,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if key in HANDLED:
             continue
         tk = RENAMES.get(key, key)
-        if tk not in T:
+        if tk not in T and tk not in PROCESS_WITHOUT_TEMPLATE:
             rep["no_equivalent"].append(key)
             continue
         motion = tk in PRINT_OPTS and tk not in NOT_SPEED and (tk in MOTION_KEYS or bool(MOTION_RE.search(tk)))
@@ -1511,7 +1555,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if motion and not keep_speeds and tk not in slow_keep:
             rep["discarded"].append(key)
             continue
-        val = adapt(tk, sv, T[tk], nfil, si, fv)
+        val = adapt(tk, sv, T.get(tk, sv), nfil, si, fv)
         if carry_motion and not isinstance(val, list) and num(val) == 0 and ("accel" in tk or "jerk" in tk):
             if num(T[tk]) != 0:   # Bambu writes 0 for "use the default" -> keep the AD5X value instead
                 rep["notes"].append(f"{tk}: author value 0 means 'default' on Bambu -> kept AD5X value {T[tk]}")
@@ -1562,13 +1606,13 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                 rep["speeds"].append(f"{tk}: {a} -> {b}" + ("  (kept: designer's slower value)" if tk in slow_keep
                                                               else "  (same)" if str(a) == str(b) else ""))
 
-    # 5) rebuild different_settings_to_system: [process, filament1..N, printer]  (see build_diff_lists)
+    # 5) collect preset overrides; write them once plate and filament adjustments are complete
     if PIN_BASE_PRESET and not keep_speeds:
         copied_keys |= {k for k in ("sparse_infill_speed", "internal_solid_infill_speed", "gap_infill_speed") if k in R}
-    R["different_settings_to_system"] = build_diff_lists(
-        copied_keys, nfil,
-        "support_object_skip_flush" in copied_keys
-        and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))))
+    template_diff = T.get("different_settings_to_system")
+    process_overrides = set()
+    if isinstance(template_diff, list) and template_diff and isinstance(template_diff[0], str):
+        process_overrides = set(template_diff[0].split(";")) & R.keys()
 
     sd = S.get("different_settings_to_system")
     if isinstance(sd, list):
@@ -1603,6 +1647,8 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                     if len(used) < nfil:
                         keep_idx = sorted(used)
                         prune_filaments(R, nfil, keep_idx)
+                        if len(keep_idx) == 1:
+                            process_overrides.add("enable_prime_tower")
                         rep["notes"].append(f"filaments: the file defined {nfil} and the model uses {len(keep_idx)}; the {nfil - len(keep_idx)} "
                                             "unused one(s) were removed so they don't show up in the slicer"
                                             + (" (prime tower switched off - nothing to purge)." if len(keep_idx) == 1 else "."))
@@ -1667,6 +1713,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
             # like the web converter: hand-painted supports only exist when support generation is on
             R["enable_support"] = "1"
             mirror["enable_support"] = "1"
+            process_overrides.add("enable_support")
             rep["notes"].append("The model has hand-painted supports but support generation was off: it was turned on "
                                 "(enable_support) so those supports exist when slicing.")
 
@@ -1695,6 +1742,12 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
             idx = row * cols + col
             return pids[idx] if 0 <= idx < len(pids) else None
 
+        R["different_settings_to_system"] = build_diff_lists(
+            copied_keys | (process_overrides & (PRINT_OPTS | EXTRA_PROCESS)), nfil_out,
+            "support_object_skip_flush" in process_overrides
+            or ("support_object_skip_flush" in copied_keys
+                and first(R.get("support_object_skip_flush")) != first(T.get("support_object_skip_flush"))))
+
         if prusa:
             write_prusa_3mf(src, dst, R, prusa, shifts[pids[0]][0], shifts[pids[0]][1], str(T.get("version", "2.3.2")))
         else:
@@ -1707,6 +1760,17 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                     data = zin.read(n)
                     if n == SETTINGS:
                         data = json.dumps(R, indent=4, ensure_ascii=False).encode("utf-8")
+                    elif n == LAYER_GCODE and keep_idx and fil_info["layer_slots"]:
+                        root, changes = parse_layer_filaments(data, nfil)
+                        slot_map = {old: new for new, old in enumerate(keep_idx, 1)}
+                        changed = False
+                        for element in changes:
+                            slot = int(element.get("extruder"))
+                            if slot_map[slot] != slot:
+                                element.set("extruder", str(slot_map[slot]))
+                                changed = True
+                        if changed:
+                            data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
                     elif n == "Metadata/model_settings.config":
                         txt = data.decode("utf-8")
                         if fixes:
@@ -1767,7 +1831,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                                   if mod else "."))
         else:
             plate_fil = nfil_out
-            if fil_info and fil_info["used"] is not None:
+            if fil_info and fil_info["used"] is not None and not fil_info["layer_slots"]:
                 pu = set()
                 for o in plates.get(pid, []):
                     pu |= fil_info["obj_used"].get(o, set())
