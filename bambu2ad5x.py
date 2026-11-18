@@ -332,6 +332,10 @@ RENAMES = {"initial_layer_flow_ratio": "first_layer_flow_ratio",
 CARRY_ANYWAY = {"best_object_pos", "silent_mode", "support_object_skip_flush", "wrapping_detection_layers"}
 # added: copied keys that are in no Orca option list, so they must be registered by hand
 EXTRA_PROCESS = {"has_scarf_joint_seam", "other_layers_print_sequence_nums", "support_object_skip_flush"}
+# Metadata and plugins must not be imported from another printer's Process preset.
+UNSAFE_CROSS_PRINTER_PROCESS = {"compatible_printers", "compatible_printers_condition",
+                                "inherits", "plugins", "print_plugin_config_overrides",
+                                "slicing_pipeline_plugin", "process_change_extrusion_role_gcode"}
 # speeds/accels are only carried with --keep-speeds
 MOTION_RE = re.compile(r"(_speed|_acceleration|_jerk)$")
 MOTION_KEYS = {"default_acceleration", "default_jerk", "travel_speed", "bridge_speed",
@@ -557,14 +561,17 @@ def fmt(x, nd=6):
 WEB_MULTI_COLOUR = "#26A69A"      # what the web converter writes to filament_multi_colour (inert for single-colour filaments)
 
 
-def build_diff_lists(copied, nfil, flag_skip_flush=False):
-    """[process, filament 1..N, printer].  Orca takes every key that is NOT listed from the installed AD5X system
-    preset, so we list EVERY key we copied from the author: no value can ever be lost, whatever Orca version is
-    installed.  (Extra keys that happen to equal the preset are harmless.)
+def build_diff_lists(copied, nfil, flag_skip_flush=False, process_values=()):
+    """[process, filament 1..N, printer]. Orca may restore any option NOT listed here
+    from an installed preset when the user changes filament/printer selections.
+    List both source overrides and all process values supplied by the personal
+    AD5X template, not only keys copied from the author's 3MF.
     The printer slot stays empty, like the web converter: listing anything there (best_object_pos!) makes Orca flag
     the printer preset as modified and pop up 'Transfer or discard changes'.  best_object_pos goes into the process
     slot, exactly where the web converter puts it."""
-    proc = sorted(k for k in copied if k in PRINT_OPTS or k in EXTRA_PROCESS or k == "best_object_pos")
+    proc = sorted(k for k in set(copied).union(process_values)
+                  if (k in PRINT_OPTS or k in EXTRA_PROCESS or k == "best_object_pos")
+                  and k not in UNSAFE_CROSS_PRINTER_PROCESS)
     # like the web converter: support_object_skip_flush is only flagged when the author changed it from the AD5X default
     proc = [k for k in proc if k != "support_object_skip_flush" or flag_skip_flush]
     fil = sorted(k for k in copied if k in FILAMENT_OPTS)
@@ -1464,7 +1471,10 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     lh = num(first(S.get("layer_height", "0.2"))) or 0.2
     R["print_settings_id"] = PROCESS_PRESETS.get(round(lh, 2)) or nearest_preset_name(lh)
     if PIN_BASE_PRESET:
-        R["print_settings_id"] = PROCESS_PRESETS[PIN_BASE_PRESET]
+        # The bundled personal printer can define its own local Process preset.
+        # Orca resolves that preset by name, while different_settings_to_system
+        # preserves the specific print settings stored in the source 3MF.
+        R["print_settings_id"] = T.get("default_print_profile") or PROCESS_PRESETS[PIN_BASE_PRESET]
     if round(lh, 2) not in PROCESS_PRESETS:
         rep["notes"].append(f"no AD5X preset for {lh} mm layers - labelled '{R['print_settings_id']}' (nearest); "
                             "your layer height itself is kept.")
@@ -1496,12 +1506,13 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if key in HANDLED:
             continue
         tk = RENAMES.get(key, key)
-        if tk not in T:
+        if tk not in T and (tk not in PRINT_OPTS or tk in UNSAFE_CROSS_PRINTER_PROCESS):
             rep["no_equivalent"].append(key)
             continue
         motion = tk in PRINT_OPTS and tk not in NOT_SPEED and (tk in MOTION_KEYS or bool(MOTION_RE.search(tk)))
         carry_motion = motion and (keep_speeds or tk in slow_keep)
-        if ((key in DISCARDED or tk in DISCARDED) and not carry_motion and tk not in CARRY_ANYWAY) or key in REPLACED or tk in REPLACED \
+        if ((key in DISCARDED or tk in DISCARDED) and not carry_motion and tk not in CARRY_ANYWAY
+                and tk != "ensure_vertical_shell_thickness") or key in REPLACED or tk in REPLACED \
                 or key in IDS or (tk in PRINTER_OPTS and tk not in CARRY_ANYWAY) or tk in IDS:
             (rep["replaced"] if (key in REPLACED or tk in REPLACED) else rep["discarded"]).append(key)
             continue
@@ -1511,7 +1522,11 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if motion and not keep_speeds and tk not in slow_keep:
             rep["discarded"].append(key)
             continue
-        val = adapt(tk, sv, T[tk], nfil, si, fv)
+        # A newer Orca/Bambu project may contain supported process options
+        # absent from our template. Keep their complete original value and shape.
+        val = adapt(tk, sv, T[tk], nfil, si, fv) if tk in T else copy.deepcopy(sv)
+        if tk == "ensure_vertical_shell_thickness" and val == "enabled":
+            val = "ensure_all"
         if carry_motion and not isinstance(val, list) and num(val) == 0 and ("accel" in tk or "jerk" in tk):
             if num(T[tk]) != 0:   # Bambu writes 0 for "use the default" -> keep the AD5X value instead
                 rep["notes"].append(f"{tk}: author value 0 means 'default' on Bambu -> kept AD5X value {T[tk]}")
@@ -1562,13 +1577,25 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                 rep["speeds"].append(f"{tk}: {a} -> {b}" + ("  (kept: designer's slower value)" if tk in slow_keep
                                                               else "  (same)" if str(a) == str(b) else ""))
 
+    # The AD5X runs Klipper; never allow an imported project or a local
+    # process base preset to enable arc fitting.
+    R["enable_arc_fitting"] = "0"
+    copied_keys.add("enable_arc_fitting")
+    rep["notes"].append("enable_arc_fitting: forced OFF for AD5X/Klipper.")
+
+    # Keep the process explicitly compatible with the printer preset selected
+    # in this 3MF. The older template still named a *different* FF AD5X preset,
+    # which could cause Orca to change process presets on a filament switch.
+    R["print_compatible_printers"] = [R["printer_settings_id"]]
+
     # 5) rebuild different_settings_to_system: [process, filament1..N, printer]  (see build_diff_lists)
     if PIN_BASE_PRESET and not keep_speeds:
         copied_keys |= {k for k in ("sparse_infill_speed", "internal_solid_infill_speed", "gap_infill_speed") if k in R}
     R["different_settings_to_system"] = build_diff_lists(
         copied_keys, nfil,
         "support_object_skip_flush" in copied_keys
-        and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))))
+        and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))),
+        process_values=R.keys())
 
     sd = S.get("different_settings_to_system")
     if isinstance(sd, list):
@@ -1662,7 +1689,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         sd0 = S.get("different_settings_to_system")
         author_proc = set(str(sd0[0]).split(";")) if isinstance(sd0, list) and sd0 else set()
         mirror = {k: first(R[k]) for k in ("enable_support",) if k in author_proc and k in R}
-        if not prusa and str(first(R.get("enable_support", "0"))) in ("0", "false") and any(
+        if not prusa and "enable_support" not in S and str(first(R.get("enable_support", "0"))) in ("0", "false") and any(
                 n.endswith(".model") and _has_paint_supports(zin, n) for n in names):
             # like the web converter: hand-painted supports only exist when support generation is on
             R["enable_support"] = "1"

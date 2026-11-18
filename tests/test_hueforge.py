@@ -87,17 +87,18 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
     def test_bundled_template_matches_user_printer_profile(self):
         root = Path(__file__).resolve().parents[1]
         template = json.loads((root / "ad5x_template.json").read_text(encoding="utf-8"))
-        profile = json.loads((root / "profiles" / "Flashforge AD5X.json").read_text(encoding="utf-8"))
+        profile = json.loads((root / "profiles" / "AD5X Nopoop .4.json").read_text(encoding="utf-8"))
 
         # The source is an Orca printer PRESET, not a whole .3mf project.
         # Preserve the project envelope and the AD5X process selection.
-        excluded = {"name", "from", "inherits"}
+        excluded = {"name", "from", "inherits", "version"}
         for key, value in profile.items():
             if key not in excluded:
                 self.assertEqual(template[key], value, key)
 
-        self.assertEqual(template["printer_settings_id"], "Flashforge AD5X")
-        self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X")
+        self.assertEqual(template["printer_settings_id"], "AD5X Nopoop .4")
+        self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X - default")
+        self.assertEqual(template["print_compatible_printers"], ["AD5X Nopoop .4"])
         self.assertNotIn("AD5M", json.dumps(profile))
         self.assertNotIn("AD5M", json.dumps(template))
         self.assertEqual(template["name"], "project_settings")
@@ -105,7 +106,17 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
         self.assertNotIn("inherits", template)
         self.assertGreater(len(template), len(profile))
 
-        self.assertTrue(template["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
+        self.assertTrue(template["machine_start_gcode"].startswith("LED_ON\nRESPOND"))
+        self.assertIn("SAVE_VARIABLE VARIABLE=use_trash_on_print", template["machine_start_gcode"])
+        self.assertIn("_GOTO_TRASH", template["change_filament_gcode"])
+        self.assertEqual(template["purge_in_prime_tower"], "0")
+        self.assertNotIn("print_host", template)
+        self.assertEqual(template["host_type"], "flashforge")
+        self.assertEqual(template["machine_load_filament_time"], "20")
+        self.assertEqual(template["machine_unload_filament_time"], "20")
+        self.assertEqual(profile["inherits"], "Flashforge AD5X 0.4 nozzle")
+        self.assertEqual(profile["extruder_nozzle_stats"], ["Standard#1"])
+        self.assertEqual(template["extruder_nozzle_stats"], ["Standard#1"])
         self.assertEqual(template["machine_end_gcode"], "END_PRINT\nLED_OFF")
         self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["before_layer_change_gcode"])
 
@@ -123,8 +134,21 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
             "layer_height": "0.08",
             "initial_layer_print_height": "0.16",
             "sparse_infill_density": "100%",
+            "sparse_infill_pattern": "rectilinear",
+            "enable_support": "0",
+            "bottom_shell_layers": "999",
+            "wall_loops": "1",
+            "ensure_vertical_shell_thickness": "enabled",
+            "enable_arc_fitting": "1",
+            # A supported process option that the bundled template lacks.
+            "enable_mixed_color_sublayer": "1",
+            # Source-printer compatibility restrictions must not follow us.
+            "compatible_printers": ["Bambu Lab X1 Carbon 0.4 nozzle"],
             "print_settings_id": "0.08mm High Quality @BBL X1C",
         })
+        # Simulate a source 3MF that does not mention a template process value.
+        # It must still be marked as explicit to survive a filament preset switch.
+        source_settings.pop("ironing_flow")
         # A tiny valid triangle model, with no face painting: switching
         # colors by layer is the only reason to keep slots 2..5.
         model = b'''<?xml version="1.0"?>
@@ -158,11 +182,34 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["layer_height"], "0.08")
                 self.assertEqual(settings["initial_layer_print_height"], "0.16")
                 self.assertEqual(settings["sparse_infill_density"], "100%")
+                self.assertEqual(settings["sparse_infill_pattern"], "rectilinear")
+                self.assertEqual(settings["enable_support"], "0")
+                self.assertEqual(settings["bottom_shell_layers"], "999")
+                self.assertEqual(settings["wall_loops"], "1")
+                self.assertEqual(settings["ensure_vertical_shell_thickness"], "ensure_all")
+                self.assertEqual(settings["enable_mixed_color_sublayer"], "1")
+                self.assertNotIn("compatible_printers", settings)
+                self.assertEqual(settings["enable_arc_fitting"], "0")
+                self.assertEqual(settings["print_compatible_printers"], ["AD5X Nopoop .4"])
+                explicit = set(settings["different_settings_to_system"][0].split(";"))
+                for key in ("enable_arc_fitting", "layer_height", "initial_layer_print_height",
+                            "sparse_infill_density", "enable_support", "wall_loops",
+                            "ironing_flow", "enable_mixed_color_sublayer"):
+                    self.assertIn(key, explicit, key)
+                self.assertNotIn("compatible_printers", explicit)
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
-                self.assertEqual(settings["printer_settings_id"], "Flashforge AD5X")
-                self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
+                self.assertEqual(settings["printer_settings_id"], "AD5X Nopoop .4")
+                self.assertEqual(settings["extruder_nozzle_stats"], ["Standard#1"])
+                self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nRESPOND"))
+                self.assertIn("SAVE_VARIABLE VARIABLE=use_trash_on_print", settings["machine_start_gcode"])
+                self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
+                self.assertEqual(settings["purge_in_prime_tower"], "0")
+                self.assertEqual(settings["host_type"], "flashforge")
+                self.assertEqual(settings["machine_load_filament_time"], "20")
+                self.assertEqual(settings["machine_unload_filament_time"], "20")
                 self.assertEqual(settings["machine_end_gcode"], "END_PRINT\nLED_OFF")
-                self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X")
+                self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X - default")
+                self.assertEqual(settings["print_settings_id"], "0.20mm Standard @FF AD5X - default")
 
 
 class TestActualHueForgeProject(unittest.TestCase):
