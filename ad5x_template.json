@@ -505,7 +505,7 @@
         "0"
     ],
     "machine_end_gcode": "END_PRINT\nLED_OFF",
-    "machine_load_filament_time": "40",
+    "machine_load_filament_time": "20",
     "machine_max_acceleration_e": [
         "5000",
         "5000"
@@ -581,7 +581,7 @@
     "machine_pause_gcode": "M25",
     "machine_start_gcode": "LED_ON\nRESPOND MSG=\"Pre-Processing purge mode results:\"\n{if purge_in_prime_tower && wipe_tower_type == \"type2\" && print_sequence == \"by layer\"}\nRESPOND MSG=\"Purge in prime tower option enabled. Using 'nopoop' mode.\"\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=0\n{else}\n{if print_sequence == \"by layer\"}\nRESPOND MSG=\"Purge in prime tower option disabled. Using 'slicer-controlled poop' mode.\"\n{else}\nRESPOND MSG=\"Using 'slicer-controlled poop' mode due to print-by-object mode.\"\n{endif}\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=2\n{endif}\nSTART_PRINT EXTRUDER_TEMP=[nozzle_temperature_initial_layer] BED_TEMP=[bed_temperature_initial_layer_single]\nSET_PRINT_STATS_INFO TOTAL_LAYER=[total_layer_count]",
     "machine_tool_change_time": "0",
-    "machine_unload_filament_time": "0",
+    "machine_unload_filament_time": "20",
     "make_overhang_printable": "0",
     "make_overhang_printable_angle": "55",
     "make_overhang_printable_hole_size": "0",
@@ -722,7 +722,7 @@
     "printer_technology": "FFF",
     "printer_variant": "0.4",
     "printing_by_object_gcode": "",
-    "purge_in_prime_tower": "1",
+    "purge_in_prime_tower": "0",
     "raft_contact_distance": "0.1",
     "raft_expansion": "1.5",
     "raft_first_layer_density": "90%",
@@ -1038,8 +1038,8 @@
         "cool_plate_temp;cool_plate_temp_initial_layer;hot_plate_temp;hot_plate_temp_initial_layer;nozzle_temperature;nozzle_temperature_initial_layer;textured_plate_temp;textured_plate_temp_initial_layer",
         ""
     ],
-    "flashforge_serial_number": "",
-    "host_type": "octoprint",
+    "flashforge_serial_number": "zmod",
+    "host_type": "flashforge",
     "input_shaping_damp_x": "0.1",
     "input_shaping_damp_y": "0.1",
     "input_shaping_emit": "0",
@@ -1078,9 +1078,6 @@
     "extruder_max_nozzle_count": [
         "1"
     ],
-    "extruder_nozzle_stats": [
-        "Standard#1"
-    ],
     "fan_direction": "undefine",
     "farthest_point_timelapse": "0",
     "gcode_remap_x": "pos_x",
@@ -1111,14 +1108,7 @@
     "machine_max_force_Y": "0",
     "machine_max_printed_mass": "0",
     "machine_prepare_compensation_time": "260",
-    "print_host": "",
-    "print_host_webui": "",
     "printer_plugin_config_overrides": "",
-    "printhost_apikey": "",
-    "printhost_cafile": "",
-    "printhost_password": "",
-    "printhost_port": "",
-    "printhost_user": "",
     "retract_after_wipe": [
         "0%"
     ],
