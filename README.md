@@ -63,6 +63,38 @@ Prefer to build it yourself? Jump to [Build from source](#-build-from-source).
 
 ---
 
+## 🐧 Personal AD5X / Dolphin conversion workflow
+
+This fork intentionally defaults to the author's **`AD5X Nopoop .4`** OrcaSlicer printer preset.
+The bundled `ad5x_template.json` contains that preset's machine-specific configuration, including
+the ZMOD purge-mode logic, start/end G-code, and tool-change commands. Connection details are
+intentionally omitted from the publicly tracked template.
+
+```zsh
+python3 bambu2ad5x.py ~/Downloads/example.3mf
+```
+
+No `--template` choice is required for Dolphin. The generated project selects
+`AD5X Nopoop .4` as its printer and `0.20mm Standard @FF AD5X - default` as
+its local Process baseline. **Those named presets must also exist in the user's
+OrcaSlicer installation**, with the printer preset inheriting
+`Flashforge AD5X 0.4 nozzle`.
+
+**Precedence:** the personal printer preset supplies machine settings and
+ZMOD G-code, while the incoming project's supported print/process values
+(including supported options missing from the bundled template) are copied
+and marked as explicit overrides. HueForge filament slots and per-layer
+color changes are not replaced by the printer preset. The converter keeps
+its deliberate AD5X motion/safety policies and always disables
+`enable_arc_fitting`, even when the source project enables it.
+
+If using the separate Dolphin `ad5x_merge_process.py` helper, keep it limited
+to local ZMOD post-processing integration; it must not replace established
+project process values with a full local Process profile. Always inspect
+the print preview before printing a converted project.
+
+---
+
 ## 🚀 Quick start
 
 <table>
