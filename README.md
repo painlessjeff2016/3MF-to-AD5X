@@ -77,8 +77,14 @@ python3 bambu2ad5x.py ~/Downloads/example.3mf
 No `--template` choice is required for Dolphin. The generated project selects
 `AD5X Nopoop .4` as its printer and `0.20mm Standard @FF AD5X - default` as
 its local Process baseline. **Those named presets must also exist in the user's
-OrcaSlicer installation**, with the printer preset inheriting
-`Flashforge AD5X 0.4 nozzle`.
+OrcaSlicer installation**. The updated Nopoop printer preset is standalone
+(`inherits` is empty), so no parent printer preset is required.
+
+The bundled printer profile matches the newer uploaded configuration: prime-tower
+purging defaults **off** (the ZMOD start G-code can still select modes),
+Flashforge is the host type, and filament load/unload estimates are 20 seconds.
+A stale AD5M Pro process name in the exported printer preset is intentionally
+replaced with the local AD5X process baseline.
 
 **Precedence:** the personal printer preset supplies machine settings and
 ZMOD G-code, while the incoming project's supported print/process values
