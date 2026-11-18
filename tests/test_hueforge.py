@@ -135,6 +135,8 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
             "enable_arc_fitting": "1",
             # A supported process option that the bundled template lacks.
             "enable_mixed_color_sublayer": "1",
+            # Source-printer compatibility restrictions must not follow us.
+            "compatible_printers": ["Bambu Lab X1 Carbon 0.4 nozzle"],
             "print_settings_id": "0.08mm High Quality @BBL X1C",
         })
         # A tiny valid triangle model, with no face painting: switching
@@ -176,6 +178,7 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["wall_loops"], "1")
                 self.assertEqual(settings["ensure_vertical_shell_thickness"], "ensure_all")
                 self.assertEqual(settings["enable_mixed_color_sublayer"], "1")
+                self.assertNotIn("compatible_printers", settings)
                 self.assertEqual(settings["enable_arc_fitting"], "0")
                 self.assertIn("enable_arc_fitting", settings["different_settings_to_system"][0].split(";"))
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
