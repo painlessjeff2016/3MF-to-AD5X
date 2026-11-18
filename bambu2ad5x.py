@@ -332,6 +332,10 @@ RENAMES = {"initial_layer_flow_ratio": "first_layer_flow_ratio",
 CARRY_ANYWAY = {"best_object_pos", "silent_mode", "support_object_skip_flush", "wrapping_detection_layers"}
 # added: copied keys that are in no Orca option list, so they must be registered by hand
 EXTRA_PROCESS = {"has_scarf_joint_seam", "other_layers_print_sequence_nums", "support_object_skip_flush"}
+# Metadata and plugins must not be imported from another printer's Process preset.
+UNSAFE_CROSS_PRINTER_PROCESS = {"compatible_printers", "compatible_printers_condition",
+                                "inherits", "plugins", "print_plugin_config_overrides",
+                                "slicing_pipeline_plugin", "process_change_extrusion_role_gcode"}
 # speeds/accels are only carried with --keep-speeds
 MOTION_RE = re.compile(r"(_speed|_acceleration|_jerk)$")
 MOTION_KEYS = {"default_acceleration", "default_jerk", "travel_speed", "bridge_speed",
@@ -1499,7 +1503,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if key in HANDLED:
             continue
         tk = RENAMES.get(key, key)
-        if tk not in T and tk not in PRINT_OPTS:
+        if tk not in T and (tk not in PRINT_OPTS or tk in UNSAFE_CROSS_PRINTER_PROCESS):
             rep["no_equivalent"].append(key)
             continue
         motion = tk in PRINT_OPTS and tk not in NOT_SPEED and (tk in MOTION_KEYS or bool(MOTION_RE.search(tk)))
