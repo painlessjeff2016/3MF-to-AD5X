@@ -689,7 +689,7 @@
     "prime_tower_width": "35",
     "prime_volume": "45",
     "print_compatible_printers": [
-        "Flashforge AD5X 0.4 nozzle"
+        "AD5X Nopoop .4"
     ],
     "print_extruder_id": [
         "1"
