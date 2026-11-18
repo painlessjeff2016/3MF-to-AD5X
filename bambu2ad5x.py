@@ -1464,7 +1464,10 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     lh = num(first(S.get("layer_height", "0.2"))) or 0.2
     R["print_settings_id"] = PROCESS_PRESETS.get(round(lh, 2)) or nearest_preset_name(lh)
     if PIN_BASE_PRESET:
-        R["print_settings_id"] = PROCESS_PRESETS[PIN_BASE_PRESET]
+        # The bundled personal printer can define its own local Process preset.
+        # Orca resolves that preset by name, while different_settings_to_system
+        # preserves the specific print settings stored in the source 3MF.
+        R["print_settings_id"] = T.get("default_print_profile") or PROCESS_PRESETS[PIN_BASE_PRESET]
     if round(lh, 2) not in PROCESS_PRESETS:
         rep["notes"].append(f"no AD5X preset for {lh} mm layers - labelled '{R['print_settings_id']}' (nearest); "
                             "your layer height itself is kept.")
@@ -1496,12 +1499,13 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if key in HANDLED:
             continue
         tk = RENAMES.get(key, key)
-        if tk not in T:
+        if tk not in T and tk not in PRINT_OPTS:
             rep["no_equivalent"].append(key)
             continue
         motion = tk in PRINT_OPTS and tk not in NOT_SPEED and (tk in MOTION_KEYS or bool(MOTION_RE.search(tk)))
         carry_motion = motion and (keep_speeds or tk in slow_keep)
-        if ((key in DISCARDED or tk in DISCARDED) and not carry_motion and tk not in CARRY_ANYWAY) or key in REPLACED or tk in REPLACED \
+        if ((key in DISCARDED or tk in DISCARDED) and not carry_motion and tk not in CARRY_ANYWAY
+                and tk != "ensure_vertical_shell_thickness") or key in REPLACED or tk in REPLACED \
                 or key in IDS or (tk in PRINTER_OPTS and tk not in CARRY_ANYWAY) or tk in IDS:
             (rep["replaced"] if (key in REPLACED or tk in REPLACED) else rep["discarded"]).append(key)
             continue
@@ -1511,7 +1515,11 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         if motion and not keep_speeds and tk not in slow_keep:
             rep["discarded"].append(key)
             continue
-        val = adapt(tk, sv, T[tk], nfil, si, fv)
+        # A newer Orca/Bambu project may contain supported process options
+        # absent from our template. Keep their complete original value and shape.
+        val = adapt(tk, sv, T[tk], nfil, si, fv) if tk in T else copy.deepcopy(sv)
+        if tk == "ensure_vertical_shell_thickness" and val == "enabled":
+            val = "ensure_all"
         if carry_motion and not isinstance(val, list) and num(val) == 0 and ("accel" in tk or "jerk" in tk):
             if num(T[tk]) != 0:   # Bambu writes 0 for "use the default" -> keep the AD5X value instead
                 rep["notes"].append(f"{tk}: author value 0 means 'default' on Bambu -> kept AD5X value {T[tk]}")
@@ -1561,6 +1569,12 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
                 a, b = first(S[key]), first(R[tk])
                 rep["speeds"].append(f"{tk}: {a} -> {b}" + ("  (kept: designer's slower value)" if tk in slow_keep
                                                               else "  (same)" if str(a) == str(b) else ""))
+
+    # The AD5X runs Klipper; never allow an imported project or a local
+    # process base preset to enable arc fitting.
+    R["enable_arc_fitting"] = "0"
+    copied_keys.add("enable_arc_fitting")
+    rep["notes"].append("enable_arc_fitting: forced OFF for AD5X/Klipper.")
 
     # 5) rebuild different_settings_to_system: [process, filament1..N, printer]  (see build_diff_lists)
     if PIN_BASE_PRESET and not keep_speeds:
@@ -1662,7 +1676,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         sd0 = S.get("different_settings_to_system")
         author_proc = set(str(sd0[0]).split(";")) if isinstance(sd0, list) and sd0 else set()
         mirror = {k: first(R[k]) for k in ("enable_support",) if k in author_proc and k in R}
-        if not prusa and str(first(R.get("enable_support", "0"))) in ("0", "false") and any(
+        if not prusa and "enable_support" not in S and str(first(R.get("enable_support", "0"))) in ("0", "false") and any(
                 n.endswith(".model") and _has_paint_supports(zin, n) for n in names):
             # like the web converter: hand-painted supports only exist when support generation is on
             R["enable_support"] = "1"
