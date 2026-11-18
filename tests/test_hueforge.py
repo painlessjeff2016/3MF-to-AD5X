@@ -98,6 +98,7 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
 
         self.assertEqual(template["printer_settings_id"], "AD5X Nopoop .4")
         self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X - default")
+        self.assertEqual(template["print_compatible_printers"], ["AD5X Nopoop .4"])
         self.assertNotIn("AD5M", json.dumps(profile))
         self.assertNotIn("AD5M", json.dumps(template))
         self.assertEqual(template["name"], "project_settings")
@@ -143,6 +144,9 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
             "compatible_printers": ["Bambu Lab X1 Carbon 0.4 nozzle"],
             "print_settings_id": "0.08mm High Quality @BBL X1C",
         })
+        # Simulate a source 3MF that does not mention a template process value.
+        # It must still be marked as explicit to survive a filament preset switch.
+        source_settings.pop("ironing_flow")
         # A tiny valid triangle model, with no face painting: switching
         # colors by layer is the only reason to keep slots 2..5.
         model = b'''<?xml version="1.0"?>
@@ -184,7 +188,13 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["enable_mixed_color_sublayer"], "1")
                 self.assertNotIn("compatible_printers", settings)
                 self.assertEqual(settings["enable_arc_fitting"], "0")
-                self.assertIn("enable_arc_fitting", settings["different_settings_to_system"][0].split(";"))
+                self.assertEqual(settings["print_compatible_printers"], ["AD5X Nopoop .4"])
+                explicit = set(settings["different_settings_to_system"][0].split(";"))
+                for key in ("enable_arc_fitting", "layer_height", "initial_layer_print_height",
+                            "sparse_infill_density", "enable_support", "wall_loops",
+                            "ironing_flow", "enable_mixed_color_sublayer"):
+                    self.assertIn(key, explicit, key)
+                self.assertNotIn("compatible_printers", explicit)
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
                 self.assertEqual(settings["printer_settings_id"], "AD5X Nopoop .4")
                 self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nRESPOND"))
