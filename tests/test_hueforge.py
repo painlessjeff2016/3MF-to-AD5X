@@ -114,7 +114,9 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
         self.assertEqual(template["host_type"], "flashforge")
         self.assertEqual(template["machine_load_filament_time"], "20")
         self.assertEqual(template["machine_unload_filament_time"], "20")
-        self.assertEqual(profile["inherits"], "")
+        self.assertEqual(profile["inherits"], "Flashforge AD5X 0.4 nozzle")
+        self.assertEqual(profile["extruder_nozzle_stats"], ["Standard#1"])
+        self.assertEqual(template["extruder_nozzle_stats"], ["Standard#1"])
         self.assertEqual(template["machine_end_gcode"], "END_PRINT\nLED_OFF")
         self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["before_layer_change_gcode"])
 
@@ -197,6 +199,7 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertNotIn("compatible_printers", explicit)
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
                 self.assertEqual(settings["printer_settings_id"], "AD5X Nopoop .4")
+                self.assertEqual(settings["extruder_nozzle_stats"], ["Standard#1"])
                 self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nRESPOND"))
                 self.assertIn("SAVE_VARIABLE VARIABLE=use_trash_on_print", settings["machine_start_gcode"])
                 self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
