@@ -561,14 +561,17 @@ def fmt(x, nd=6):
 WEB_MULTI_COLOUR = "#26A69A"      # what the web converter writes to filament_multi_colour (inert for single-colour filaments)
 
 
-def build_diff_lists(copied, nfil, flag_skip_flush=False):
-    """[process, filament 1..N, printer].  Orca takes every key that is NOT listed from the installed AD5X system
-    preset, so we list EVERY key we copied from the author: no value can ever be lost, whatever Orca version is
-    installed.  (Extra keys that happen to equal the preset are harmless.)
+def build_diff_lists(copied, nfil, flag_skip_flush=False, process_values=()):
+    """[process, filament 1..N, printer]. Orca may restore any option NOT listed here
+    from an installed preset when the user changes filament/printer selections.
+    List both source overrides and all process values supplied by the personal
+    AD5X template, not only keys copied from the author's 3MF.
     The printer slot stays empty, like the web converter: listing anything there (best_object_pos!) makes Orca flag
     the printer preset as modified and pop up 'Transfer or discard changes'.  best_object_pos goes into the process
     slot, exactly where the web converter puts it."""
-    proc = sorted(k for k in copied if k in PRINT_OPTS or k in EXTRA_PROCESS or k == "best_object_pos")
+    proc = sorted(k for k in set(copied).union(process_values)
+                  if (k in PRINT_OPTS or k in EXTRA_PROCESS or k == "best_object_pos")
+                  and k not in UNSAFE_CROSS_PRINTER_PROCESS)
     # like the web converter: support_object_skip_flush is only flagged when the author changed it from the AD5X default
     proc = [k for k in proc if k != "support_object_skip_flush" or flag_skip_flush]
     fil = sorted(k for k in copied if k in FILAMENT_OPTS)
@@ -1580,13 +1583,19 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     copied_keys.add("enable_arc_fitting")
     rep["notes"].append("enable_arc_fitting: forced OFF for AD5X/Klipper.")
 
+    # Keep the process explicitly compatible with the printer preset selected
+    # in this 3MF. The older template still named a *different* FF AD5X preset,
+    # which could cause Orca to change process presets on a filament switch.
+    R["print_compatible_printers"] = [R["printer_settings_id"]]
+
     # 5) rebuild different_settings_to_system: [process, filament1..N, printer]  (see build_diff_lists)
     if PIN_BASE_PRESET and not keep_speeds:
         copied_keys |= {k for k in ("sparse_infill_speed", "internal_solid_infill_speed", "gap_infill_speed") if k in R}
     R["different_settings_to_system"] = build_diff_lists(
         copied_keys, nfil,
         "support_object_skip_flush" in copied_keys
-        and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))))
+        and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))),
+        process_values=R.keys())
 
     sd = S.get("different_settings_to_system")
     if isinstance(sd, list):
