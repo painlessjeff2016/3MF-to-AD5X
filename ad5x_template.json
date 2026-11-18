@@ -1114,5 +1114,8 @@
     ],
     "support_cooling_filter": "0",
     "support_fast_purge_mode": "0",
-    "wait_for_temp_on_wipe_tower": "0"
+    "wait_for_temp_on_wipe_tower": "0",
+    "extruder_nozzle_stats": [
+        "Standard#1"
+    ]
 }
