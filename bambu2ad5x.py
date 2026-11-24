@@ -1468,6 +1468,8 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     R["print_settings_id"] = PROCESS_PRESETS.get(round(lh, 2)) or nearest_preset_name(lh)
     if PIN_BASE_PRESET:
         R["print_settings_id"] = PROCESS_PRESETS[PIN_BASE_PRESET]
+    if T.get("printer_settings_id") == "AD5X KilnOS Adaptive Purge - 0.4mm":
+        R["print_settings_id"] = T["default_print_profile"]
     if round(lh, 2) not in PROCESS_PRESETS:
         rep["notes"].append(f"no AD5X preset for {lh} mm layers - labelled '{R['print_settings_id']}' (nearest); "
                             "your layer height itself is kept.")
@@ -1611,7 +1613,7 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     if T.get("printer_settings_id") == "AD5X KilnOS Adaptive Purge - 0.4mm":
         R["different_settings_to_system"][-1] = ""
         # Orca needs the parent preset identities, even without machine overrides.
-        R["inherits_group"] = [""] + [""] * nfil + ["Flashforge AD5X 0.4 nozzle"]
+        R["inherits_group"] = ["0.20mm Standard @FF AD5X"] + [""] * nfil + ["Flashforge AD5X 0.4 nozzle"]
         rep["notes"].append("Uses the installed AD5X KilnOS Adaptive Purge - 0.4mm printer preset; install it before opening the project.")
 
     sd = S.get("different_settings_to_system")
