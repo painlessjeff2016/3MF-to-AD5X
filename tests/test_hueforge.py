@@ -167,7 +167,7 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["machine_end_gcode"], "PRINT_END\nLED_OFF")
                 self.assertEqual(settings["printer_agent"], "moonraker")
                 self.assertEqual(settings["purge_in_prime_tower"], "0")
-                self.assertIn("change_filament_gcode", settings["different_settings_to_system"][-1].split(";"))
+                self.assertEqual(settings["different_settings_to_system"][-1], "")
                 self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
                 self.assertEqual(settings["plugins"], ["kiln_ifs_map;;Kiln IFS Tool Map"])
                 self.assertEqual(settings["slicing_pipeline_plugin"], ["Kiln IFS Tool Map"])
