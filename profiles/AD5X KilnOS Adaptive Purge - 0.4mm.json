@@ -209,7 +209,7 @@
   ],
   "machine_pause_gcode": "PAUSE",
   "machine_prepare_compensation_time": "260",
-  "machine_start_gcode": "LED_ON\nRESPOND MSG=\"Pre-Processing purge mode results:\"\n{if purge_in_prime_tower && wipe_tower_type == \"type2\" && print_sequence == \"by layer\"}\nRESPOND MSG=\"Purge in prime tower option enabled. Using 'nopoop' mode.\"\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=0\n{else}\n{if print_sequence == \"by layer\"}\nRESPOND MSG=\"Purge in prime tower option disabled. Using 'slicer-controlled poop' mode.\"\n{else}\nRESPOND MSG=\"Using 'slicer-controlled poop' mode due to print-by-object mode.\"\n{endif}\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=2\n{endif}\nPRINT_START BED=[bed_temperature_initial_layer_single] EXTRUDER=[nozzle_temperature_initial_layer] TOOL=[initial_tool]\nSET_PRINT_STATS_INFO TOTAL_LAYER=[total_layer_count]",
+  "machine_start_gcode": "LED_ON\n\n; Always perform a full startup purge\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=1\n\nPRINT_START BED=[bed_temperature_initial_layer_single] EXTRUDER=[nozzle_temperature_initial_layer] TOOL=[initial_tool]\n\n; Select purge mode for subsequent filament changes\n{if purge_in_prime_tower && wipe_tower_type == \"type2\" && print_sequence == \"by layer\"}\nRESPOND MSG=\"Using nopoop mode.\"\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=0\n{else}\nRESPOND MSG=\"Using slicer-controlled poop mode.\"\nSAVE_VARIABLE VARIABLE=use_trash_on_print VALUE=2\n{endif}\n\nSET_PRINT_STATS_INFO TOTAL_LAYER=[total_layer_count]",
   "machine_tool_change_time": "0",
   "machine_unload_filament_time": "20",
   "manual_filament_change": "0",
