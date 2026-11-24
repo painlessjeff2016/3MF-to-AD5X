@@ -1320,6 +1320,9 @@ def prune_filaments(R, nfil, keep):
     d = R.get("different_settings_to_system")
     if isinstance(d, list) and len(d) >= 3:
         R["different_settings_to_system"] = [d[0]] + [d[1]] * n + [d[-1]]
+    parents = R.get("inherits_group")
+    if isinstance(parents, list) and len(parents) == nfil + 2:
+        R["inherits_group"] = [parents[0]] + [parents[i] for i in keep] + [parents[-1]]
     if n == 1:
         R["enable_prime_tower"] = "0"        # nothing to purge with a single filament
 
@@ -1607,6 +1610,8 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
     # preset's inheritance and compatible process profiles.
     if T.get("printer_settings_id") == "AD5X KilnOS Adaptive Purge - 0.4mm":
         R["different_settings_to_system"][-1] = ""
+        # Orca needs the parent preset identities, even without machine overrides.
+        R["inherits_group"] = [""] + [""] * nfil + ["Flashforge AD5X 0.4 nozzle"]
         rep["notes"].append("Uses the installed AD5X KilnOS Adaptive Purge - 0.4mm printer preset; install it before opening the project.")
 
     sd = S.get("different_settings_to_system")
