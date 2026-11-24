@@ -1487,6 +1487,36 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
 
     # 4) copy the author's settings
     copied_keys = set()
+    # Plugin selections and executable postprocessors are trusted target settings,
+    # not instructions to inherit from an arbitrary downloaded project.
+    plugin_keys = {"plugins", "slicing_pipeline_plugin", "post_process",
+                   "print_plugin_config_overrides", "filament_plugin_config_overrides",
+                   "printer_plugin_config_overrides"}
+    if T.get("printer_settings_id") == "AD5X KilnOS Adaptive Purge - 0.4mm":
+        # An explicitly supplied environment override is trusted local configuration.
+        # An empty value disables the bundled personal postprocessor.
+        if "AD5X_POST_PROCESS" in os.environ:
+            command = os.environ["AD5X_POST_PROCESS"]
+            R["post_process"] = [command] if command else []
+        copied_keys.update(k for k in plugin_keys - {"printer_plugin_config_overrides"} if k in R)
+        rep["notes"].append("Applied trusted KilnOS plugin selections and local postprocessor from the target configuration.")
+        # Only accept overrides when the source uses exactly the configured plugin
+        # selection. Unknown plugin formats or machine overrides stay target-owned.
+        if S.get("plugins") == T.get("plugins") and S.get("slicing_pipeline_plugin") == T.get("slicing_pipeline_plugin"):
+            v = S.get("print_plugin_config_overrides")
+            if isinstance(v, str):
+                R["print_plugin_config_overrides"] = v
+                rep["kept"].append("print_plugin_config_overrides")
+            v = S.get("filament_plugin_config_overrides")
+            if isinstance(v, list) and v and len(v) in (nfil, len(si)) and all(isinstance(x, str) for x in v):
+                R["filament_plugin_config_overrides"] = fil_vector(v, nfil, si, fv)
+                rep["kept"].append("filament_plugin_config_overrides")
+            elif isinstance(v, str) and not v:
+                R["filament_plugin_config_overrides"] = v
+        if S.get("plugins") and S.get("plugins") != T.get("plugins"):
+            rep["warn"].append("Source plugin selection differs from trusted target; source plugins were not activated.")
+        if S.get("post_process") and S.get("post_process") != R.get("post_process"):
+            rep["warn"].append("Source postprocessor was not inherited; only trusted target commands are embedded.")
     slow_keep = slower_author_speeds(S, T)   # designer deliberately went SLOWER than the AD5X preset -> respect it
     if slow_keep and not keep_speeds:
         rep["notes"].append(
@@ -1494,6 +1524,8 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
             + ", ".join(f"{k} {fmt(v)} mm/s" for k, v in sorted(slow_keep.items()))
             + ". All other speeds come from your printer's profile.")
     for key, sv in S.items():
+        if key in plugin_keys:
+            continue  # handled separately above; never inherit arbitrary source commands
         if key in HANDLED:
             continue
         tk = RENAMES.get(key, key)
