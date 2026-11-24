@@ -168,6 +168,7 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["printer_agent"], "moonraker")
                 self.assertEqual(settings["purge_in_prime_tower"], "0")
                 self.assertEqual(settings["different_settings_to_system"][-1], "")
+                self.assertEqual(settings["inherits_group"], [""] * (len(settings["filament_settings_id"]) + 1) + ["Flashforge AD5X 0.4 nozzle"])
                 self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
                 self.assertEqual(settings["plugins"], ["kiln_ifs_map;;Kiln IFS Tool Map"])
                 self.assertEqual(settings["slicing_pipeline_plugin"], ["Kiln IFS Tool Map"])
