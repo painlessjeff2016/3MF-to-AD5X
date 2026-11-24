@@ -117,6 +117,9 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
         source_settings = json.loads(template.read_text(encoding="utf-8"))
         source_settings.update({
             "printer_model": "Bambu Lab X1 Carbon",
+            "plugins": ["untrusted;;Untrusted"],
+            "slicing_pipeline_plugin": ["Untrusted"],
+            "post_process": ["/untrusted/script"],
             "filament_colour": COLORS,
             "filament_type": ["PLA"] * 5,
             "filament_settings_id": ["Generic PLA"] * 5,
@@ -166,6 +169,15 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["purge_in_prime_tower"], "0")
                 self.assertIn("change_filament_gcode", settings["different_settings_to_system"][-1].split(";"))
                 self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
+                self.assertEqual(settings["plugins"], ["kiln_ifs_map;;Kiln IFS Tool Map"])
+                self.assertEqual(settings["slicing_pipeline_plugin"], ["Kiln IFS Tool Map"])
+                self.assertEqual(settings["post_process"], ["/home/jeff/.local/bin/zmod_preprocess-linux-amd64"])
+                process_keys = settings["different_settings_to_system"][0].split(";")
+                for key in ("plugins", "slicing_pipeline_plugin", "post_process"):
+                    self.assertIn(key, process_keys)
+                start = settings["machine_start_gcode"]
+                self.assertLess(start.index("VALUE=1"), start.index("PRINT_START BED="))
+                self.assertLess(start.index("PRINT_START BED="), start.index("VALUE=2"))
                 self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X - default")
 
 
