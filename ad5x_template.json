@@ -702,7 +702,7 @@
     "print_flow_ratio": "1",
     "print_order": "default",
     "print_sequence": "by layer",
-    "print_settings_id": "0.16mm Standard @FF AD5X",
+    "print_settings_id": "0.20mm Standard @FF AD5X - default",
     "printable_area": [
         "0x0",
         "220x0",
