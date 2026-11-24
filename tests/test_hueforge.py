@@ -82,22 +82,22 @@ class TestHueForgeFilamentDetection(unittest.TestCase):
 
 
 class TestBundledAD5XPrinterProfile(unittest.TestCase):
-    """The complete template must use the correct ZMOD printer settings."""
+    """The complete template must use the correct KilnOS printer settings."""
 
     def test_bundled_template_matches_user_printer_profile(self):
         root = Path(__file__).resolve().parents[1]
         template = json.loads((root / "ad5x_template.json").read_text(encoding="utf-8"))
-        profile = json.loads((root / "profiles" / "Flashforge AD5X.json").read_text(encoding="utf-8"))
+        profile = json.loads((root / "profiles" / "AD5X KilnOS Adaptive Purge - 0.4mm.json").read_text(encoding="utf-8"))
 
         # The source is an Orca printer PRESET, not a whole .3mf project.
         # Preserve the project envelope and the AD5X process selection.
-        excluded = {"name", "from", "inherits"}
+        excluded = {"name", "from", "inherits", "version"}
         for key, value in profile.items():
             if key not in excluded:
                 self.assertEqual(template[key], value, key)
 
-        self.assertEqual(template["printer_settings_id"], "Flashforge AD5X")
-        self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X")
+        self.assertEqual(template["printer_settings_id"], "AD5X KilnOS Adaptive Purge - 0.4mm")
+        self.assertEqual(template["default_print_profile"], "0.20mm Standard @FF AD5X - default")
         self.assertNotIn("AD5M", json.dumps(profile))
         self.assertNotIn("AD5M", json.dumps(template))
         self.assertEqual(template["name"], "project_settings")
@@ -105,9 +105,9 @@ class TestBundledAD5XPrinterProfile(unittest.TestCase):
         self.assertNotIn("inherits", template)
         self.assertGreater(len(template), len(profile))
 
-        self.assertTrue(template["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
-        self.assertEqual(template["machine_end_gcode"], "END_PRINT\nLED_OFF")
-        self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["before_layer_change_gcode"])
+        self.assertIn("PRINT_START BED=", template["machine_start_gcode"])
+        self.assertEqual(template["machine_end_gcode"], "PRINT_END\nLED_OFF")
+        self.assertIn("SET_PRINT_STATS_INFO CURRENT_LAYER=", template["layer_change_gcode"])
 
 class TestSyntheticHueForgeConversion(unittest.TestCase):
     """Run the real converter on a tiny generated five-color 3MF."""
@@ -159,10 +159,14 @@ class TestSyntheticHueForgeConversion(unittest.TestCase):
                 self.assertEqual(settings["initial_layer_print_height"], "0.16")
                 self.assertEqual(settings["sparse_infill_density"], "100%")
                 self.assertEqual(archive.read("Metadata/custom_gcode_per_layer.xml"), LAYER_CHANGES)
-                self.assertEqual(settings["printer_settings_id"], "Flashforge AD5X")
-                self.assertTrue(settings["machine_start_gcode"].startswith("LED_ON\nSTART_PRINT"))
-                self.assertEqual(settings["machine_end_gcode"], "END_PRINT\nLED_OFF")
-                self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X")
+                self.assertEqual(settings["printer_settings_id"], "AD5X KilnOS Adaptive Purge - 0.4mm")
+                self.assertIn("PRINT_START BED=", settings["machine_start_gcode"])
+                self.assertEqual(settings["machine_end_gcode"], "PRINT_END\nLED_OFF")
+                self.assertEqual(settings["printer_agent"], "moonraker")
+                self.assertEqual(settings["purge_in_prime_tower"], "0")
+                self.assertIn("change_filament_gcode", settings["different_settings_to_system"][-1].split(";"))
+                self.assertIn("_GOTO_TRASH", settings["change_filament_gcode"])
+                self.assertEqual(settings["default_print_profile"], "0.20mm Standard @FF AD5X - default")
 
 
 class TestActualHueForgeProject(unittest.TestCase):
