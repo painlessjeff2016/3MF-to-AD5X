@@ -1607,12 +1607,12 @@ def _convert(src, dst, template, keep_speeds, prune_unused=True):
         "support_object_skip_flush" in copied_keys
         and str(first(R.get("support_object_skip_flush", "0"))) != str(first(T.get("support_object_skip_flush", "0"))))
 
-    # Keep the installed preset's inheritance, but explicitly retain the two
-    # KilnOS transport settings; Orca may otherwise resolve factory defaults.
+    # Keep installed preset inheritance, but retain KilnOS transport and
+    # cooling settings; Orca may otherwise resolve factory defaults.
     if T.get("printer_settings_id") == "AD5X KilnOS Adaptive Purge - 0.4mm":
         R["printer_agent"] = "moonraker"
         R["use_3mf"] = "0"
-        R["different_settings_to_system"][-1] = "printer_agent;use_3mf"
+        R["different_settings_to_system"][-1] = "fan_kickstart;fan_speedup_overhangs;fan_speedup_time;part_cooling_fan_min_pwm;printer_agent;use_3mf"
         # Orca needs the parent preset identities, even without machine overrides.
         R["inherits_group"] = ["0.20mm Standard @FF AD5X"] + [""] * nfil + ["Flashforge AD5X 0.4 nozzle"]
         rep["notes"].append("Uses the installed AD5X KilnOS Adaptive Purge - 0.4mm printer preset; install it before opening the project.")
