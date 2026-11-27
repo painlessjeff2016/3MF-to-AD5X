@@ -1,0 +1,6 @@
+.gradle/
+**/build/
+local.properties
+app/src/main/python/bambu2ad5x.py
+app/src/main/assets/ad5x_template.json
+app/src/main/assets/ENGINE-LICENSE.txt
